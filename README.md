@@ -1,2 +1,0 @@
-# Whiskey-Goggles
-Superteam BAXUS
