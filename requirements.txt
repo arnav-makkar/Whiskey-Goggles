@@ -10,3 +10,4 @@ Pillow
 streamlit
 pytesseract
 rapidfuzz
+git+https://github.com/openai/CLIP.git
