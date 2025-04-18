@@ -1,90 +1,72 @@
-# scripts/extract_features.py
-import os
-import logging
+#!/usr/bin/env python3
+"""
+Build two 512‑d CLIP indices over your 500 catalog bottles:
+  • feats_clip.npy   ← image embeddings (YOLO‑cropped)
+  • text_feats.npy   ← text embeddings of bottle names
+Also write id_map.csv with [bottle_id, img_path].
+"""
+import os, logging
 import numpy as np
 import pandas as pd
-import torch
-import torchvision
-from torchvision import transforms
-from PIL import Image, UnidentifiedImageError
-import cv2
+from PIL import Image
+import torch, clip
+from ultralytics import YOLO
 
-# ——— Logging setup ———
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
 
-# ——— 1) Load ResNet50 with new weights API ———
-model = torchvision.models.resnet50(
-    weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1
-)
-model.eval()
-feat_extractor = torch.nn.Sequential(*list(model.children())[:-1])
+device = "cuda" if torch.cuda.is_available() else "cpu"
+detector = YOLO("yolov8n.pt")
+clip_model, preprocess = clip.load("ViT-B/32", device=device)
+clip_model.eval()
 
-# ——— 2) Preprocessing + CLAHE for lighting robustness ———
-def preprocess(img: Image.Image) -> torch.Tensor:
-    # PIL→OpenCV BGR
-    arr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    lab = cv2.cvtColor(arr, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    cl = clahe.apply(l)
-    merged = cv2.merge((cl, a, b))
-    rgb = cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
-    pil = Image.fromarray(rgb)
-
-    tf = transforms.Compose([
-        transforms.Resize((224,224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485,0.456,0.406],
-                             std =[0.229,0.224,0.225])
-    ])
-    return tf(pil)
-
-# ——— 3) Read CSV & extract features with TTA rotations ———
+# 1) Load catalog metadata
 df = pd.read_csv("data/bottles.csv", dtype={"id": str})
-feats_list, ids = [], []
+feats_img, ids, img_paths = [], [], []
 
+# 2) Compute image embeddings
 for _, row in df.iterrows():
-    img_id = row["id"]
-    path   = f"data/images/{img_id}.jpg"
+    bid  = row["id"]
+    path = f"data/images/{bid}.jpg"
     if not os.path.isfile(path):
-        logging.warning(f"{img_id}: missing image, skipping.")
+        logging.warning(f"{bid}: missing image, skipping")
         continue
 
-    try:
-        img = Image.open(path).convert("RGB")
-    except (UnidentifiedImageError, OSError) as e:
-        logging.error(f"{img_id}: cannot open image ({e}), skipping.")
-        continue
+    # YOLOv8 crop
+    img = Image.open(path).convert("RGB")
+    det = detector(path, verbose=False)[0]
+    if det.boxes.xyxy.shape[0]:
+        boxes = det.boxes.xyxy.cpu().numpy()
+        # largest box crop
+        areas = (boxes[:,2]-boxes[:,0])*(boxes[:,3]-boxes[:,1])
+        x1,y1,x2,y2 = boxes[np.argmax(areas)]
+        img = img.crop((x1,y1,x2,y2))
 
-    # Test‐time augmentation: small rotations
-    angles = [0, -10, 10]
-    buffs = []
-    for ang in angles:
-        im_rot = img.rotate(ang, resample=Image.BILINEAR)
-        x = preprocess(im_rot).unsqueeze(0)
-        with torch.no_grad():
-            f = feat_extractor(x).squeeze().cpu().numpy()
-        buffs.append(f)
-    feat_avg = np.mean(buffs, axis=0)
+    # CLIP encode + normalize
+    with torch.no_grad():
+        v = clip_model.encode_image(preprocess(img).unsqueeze(0).to(device))
+    v = v / v.norm(dim=-1, keepdim=True)
 
-    feats_list.append(feat_avg.astype("float32"))
-    ids.append(int(img_id))
-    logging.info(f"{img_id}: feature extracted")
+    feats_img.append(v.cpu().numpy()[0])
+    ids.append(bid)
+    img_paths.append(path)
+    logging.info(f"{bid}: image encoded")
 
-if not feats_list:
-    raise RuntimeError("No features extracted! Check your images folder.")
+# 3) Save image feats + id_map
+feats_img = np.stack(feats_img).astype("float32")
+np.save("data/feats_clip.npy", feats_img)
+id_map_df = pd.DataFrame({
+    "bottle_id": ids,
+    "img_path":  img_paths
+})
+id_map_df.to_csv("data/id_map.csv", index=False)
+logging.info("Saved feats_clip.npy + id_map.csv")
 
-# ——— 4) Stack, normalize, and save ———
-feats = np.stack(feats_list)                      # (M,2048)
-norms = np.linalg.norm(feats, axis=1, keepdims=True)
-feats_norm = feats / norms                        # L2‑normalized
-
-os.makedirs("data", exist_ok=True)
-np.save("data/feats_norm.npy", feats_norm)        # for cosine sims
-pd.DataFrame({"bottle_id": ids}) \
-  .to_csv("data/id_map.csv", index=False)
-logging.info(f"Saved feats_norm.npy ({feats_norm.shape}) + id_map.csv")
+# 4) Compute text embeddings over the **same** ids
+names = [df.loc[df["id"] == bid, "name"].values[0] for bid in ids]
+text_tokens = clip.tokenize(names).to(device)
+with torch.no_grad():
+    text_embs = clip_model.encode_text(text_tokens)
+text_embs = text_embs / text_embs.norm(dim=-1, keepdim=True)
+np.save("data/text_feats.npy", text_embs.cpu().numpy().astype("float32"))
+logging.info("Saved text_feats.npy")
