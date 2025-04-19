@@ -115,20 +115,40 @@ with tab_upload:
 
 # ---------- Tab 2: Camera ----------
 with tab_camera:
-    st.subheader("Snap a photo")
-    cam_img = st.camera_input("Capture")
-    if cam_img:
-        tmp = "tmp_camera.jpg"
-        with open(tmp, "wb") as f: f.write(cam_img.read())
-        st.image(tmp, caption="Query", use_column_width=True)
-        with st.spinner("Matching..."):
-            res = match(tmp)
-        top = res["top"]
-        st.markdown(f"### {top['name']}  ({top['confidence']*100:.2f}%)")
-        st.image(top["ref_img"], caption="Catalog reference")
-        with st.expander("Other matches"):
-            for alt in res["alt"]:
-                st.markdown(f"{alt['rank']}. {alt['name']} ({alt['confidence']*100:.2f}%)")
+    st.subheader("Take a Photo")
+    st.caption("Click ▶️ to open the camera and take a photo of your bottle.")
+
+    if "cam_mode_on" not in st.session_state:
+        st.session_state["cam_mode_on"] = False
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        take_photo = st.button("▶️ Take Photo")
+    with col2:
+        close_photo = st.button("⏹️ Close Camera")
+
+    if take_photo:
+        st.session_state["cam_mode_on"] = True
+    if close_photo:
+        st.session_state["cam_mode_on"] = False
+
+    if st.session_state["cam_mode_on"]:
+        cam_img = st.camera_input("📸 Capture your bottle")
+        if cam_img:
+            tmp = "tmp_camera.jpg"
+            with open(tmp, "wb") as f:
+                f.write(cam_img.read())
+            st.image(tmp, caption="Captured Image", use_column_width=True)
+            with st.spinner("Matching..."):
+                res = match(tmp)
+            top = res["top"]
+            st.markdown(f"### {top['name']}  ({top['confidence']*100:.2f}%)")
+            st.image(top["ref_img"], caption="Catalog reference")
+            with st.expander("Other matches"):
+                for alt in res["alt"]:
+                    st.markdown(f"{alt['rank']}. {alt['name']} ({alt['confidence']*100:.2f}%)")
+    else:
+        st.info("Camera is off. Click ▶️ to open the camera.")
 
 # ---------- Tab 3: Real‑Time ----------
 with tab_live:
