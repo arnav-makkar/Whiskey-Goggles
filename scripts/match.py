@@ -16,6 +16,16 @@ import torch, clip, cv2
 from ultralytics import YOLO
 from rapidfuzz import fuzz
 from paddleocr import PaddleOCR
+import zipfile, os
+
+OCR_DIR = os.path.expanduser("~/.paddleocr/whl")
+
+# Extract models only once if missing
+if not os.path.exists(OCR_DIR):
+    os.makedirs(os.path.dirname(OCR_DIR), exist_ok=True)
+    with zipfile.ZipFile("paddle_models.zip", "r") as zip_ref:
+        zip_ref.extractall(os.path.expanduser("~/.paddleocr"))
+
 
 # ---------------- CONFIG ----------------
 TOP_K       = 4

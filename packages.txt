@@ -5,3 +5,4 @@ libsm6
 libxrender1
 libxext6
 ccache
+libglib2.0-bin
