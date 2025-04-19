@@ -1,13 +1,14 @@
 torch
 torchvision
-# install CLIP from source once:
-#   git clone https://github.com/openai/CLIP && pip install ./CLIP
-ultralytics>=8.3.0
+ultralytics
 opencv-python-headless
-pandas
 numpy
-Pillow
+pandas
 streamlit
+Pillow
 pytesseract
 rapidfuzz
+streamlit-webrtc
 git+https://github.com/openai/CLIP.git
+paddlepaddle
+paddleocr
