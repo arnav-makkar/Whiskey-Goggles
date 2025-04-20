@@ -17,7 +17,6 @@ import torch, clip, cv2
 from ultralytics import YOLO
 from rapidfuzz import fuzz
 from functools import lru_cache
-import gc
 
 # ─────────────────── CONFIG ────────────────────
 TOP_K       = 4
@@ -153,9 +152,6 @@ def match(path: str):
             "ref_img":    id_map.iloc[i]["img_path"],
             "rank": rk
         })
-
-    del pil_crop, vec, sims
-    gc.collect()
 
     status = "unknown" if ocr_txt else "no_text_detected"
     return {"status":status, "top":res[0], "alt":res[1:]}
