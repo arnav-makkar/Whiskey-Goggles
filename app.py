@@ -112,7 +112,7 @@ with tab_upload:
     if uploaded:
         tmp = "tmp_upload.jpg"
         with open(tmp, "wb") as f: f.write(uploaded.read())
-        st.image(tmp, caption="Query", use_column_width=True)
+        st.image(tmp, caption="Query", use_container_width=True)
         with st.spinner("Matching..."):
             res = match(tmp)
 
@@ -159,7 +159,7 @@ with tab_camera:
         if cam_img:
             tmp = "tmp_camera.jpg"
             with open(tmp, "wb") as f: f.write(cam_img.read())
-            st.image(tmp, caption="Captured", use_column_width=True)
+            st.image(tmp, caption="Captured", use_container_width=True)
             with st.spinner("Matching..."):
                 res = match(tmp)
             top = res["top"]
