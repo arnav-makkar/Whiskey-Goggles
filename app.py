@@ -8,6 +8,31 @@ Streamlit‑based Whisky Goggles demo
       – detects ONLY objects whose YOLO class == 'bottle'
       – draws green box + name + MSRP / Shelf price
 """
+
+
+import time, streamlit as st, traceback, sys
+
+st.write("🚀 entered app script, time:", time.time())
+
+def safe_import(name):
+    try:
+        __import__(name)
+        st.write(f"✅ imported {name}")
+    except Exception as e:
+        st.write(f"❌ failed {name}: {e}")
+        traceback.print_exc()
+        sys.exit()
+
+# Test heavy libs
+safe_import("torch")
+safe_import("paddleocr")
+safe_import("ultralytics")
+
+st.write("🟢 all heavy imports done")
+
+
+
+
 import os, sys, cv2, numpy as np, torch, streamlit as st
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.match import match
