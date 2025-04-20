@@ -1,3 +1,2 @@
 [server]
 fileWatcherType = "none"
-memoryUsageLimit = 0.9
