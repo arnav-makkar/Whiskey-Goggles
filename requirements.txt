@@ -10,8 +10,9 @@ pytesseract
 rapidfuzz
 streamlit-webrtc
 git+https://github.com/openai/CLIP.git
+paddleocr
 paddlepaddle
-paddleocr==2.6.1.3
-paddlepaddle==2.5.2
 google-cloud-aiplatform
 google-cloud-logging
+numpy
+pytesseract

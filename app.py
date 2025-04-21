@@ -121,10 +121,12 @@ with tab_upload:
         with c1:
             st.markdown(f"### {top['name']}")
             st.markdown(f"**Confidence:** {top['confidence']*100:.2f}%")
-            st.markdown(
-                f"**MSRP:** ${top.get('avg_msrp','N/A')}  &nbsp;&nbsp; "
-                f"**Shelf:** ${top.get('shelf_price','N/A')}"
-            )
+            
+
+            st.write(f"**MSRP:** ${top.get('avg_msrp','N/A')}  Shelf: ${top.get('shelf_price','N/A')}")
+
+
+
             status = {
                 "in_dataset":      "✅ Exact catalog match",
                 "unknown":         "⚠️ Closest match (not in catalog)",
