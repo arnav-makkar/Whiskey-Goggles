@@ -4,8 +4,9 @@ FROM python:3.9-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including git
 RUN apt-get update && apt-get install -y \
+    git \
     tesseract-ocr \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -29,4 +30,4 @@ ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 
 # Command to run the application
-CMD ["streamlit", "run", "app.py"] 
+CMD ["streamlit", "run", "app.py"]

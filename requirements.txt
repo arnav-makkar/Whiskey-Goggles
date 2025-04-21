@@ -12,3 +12,6 @@ streamlit-webrtc
 git+https://github.com/openai/CLIP.git
 paddlepaddle
 paddleocr
+streamlit
+google-cloud-apiplatform
+google-cloud-logging
