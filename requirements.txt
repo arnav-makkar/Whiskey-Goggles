@@ -11,7 +11,7 @@ rapidfuzz
 streamlit-webrtc
 git+https://github.com/openai/CLIP.git
 paddlepaddle
-paddleocr
-streamlit
-google-cloud-apiplatform
+paddleocr==2.6.1.3
+paddlepaddle==2.5.2
+google-cloud-aiplatform
 google-cloud-logging
