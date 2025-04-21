@@ -11,6 +11,21 @@ Streamlit‑based Whisky Goggles demo
 import os, sys, cv2, numpy as np, torch, streamlit as st
 from PIL import Image
 
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
+
+# ─────────────── TURN / STUN config  ──────────────
+RTC_CONFIGURATION = {
+    "iceTransportPolicy": "relay",                 # force relay via TURN
+    "iceServers": [
+        {"urls": "stun:stun.l.google.com:19302"},  # public STUN
+        {                                          # your TURN relay (plain TCP 443)
+            "urls": "turn:34.31.80.206:443?transport=tcp",
+            "username": "streamlit",
+            "credential": "SuperSecretPassword123",
+        },
+    ],
+}
+
 # Must be first Streamlit call
 st.set_page_config(page_title="🥃 Whisky Goggles", layout="centered")
 
@@ -193,9 +208,10 @@ with tab_live:
         webrtc_streamer(
             key="whisky-live",
             mode=WebRtcMode.SENDRECV,
+            rtc_configuration=RTC_CONFIGURATION,      # <─ NEW
             video_transformer_factory=BottleTransformer,
-            media_stream_constraints={"video":True,"audio":False},
+            media_stream_constraints={"video": True, "audio": False},
             async_processing=True,
         )
     else:
-        st.info("Camera is off. Click ▶️ to start real-time detection.")
+        st.info("Camera is off. Click ▶️ to start real‑time detection.")
