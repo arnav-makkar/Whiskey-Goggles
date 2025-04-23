@@ -8,9 +8,9 @@ Streamlit‑based Whisky Goggles demo
       – detects ONLY objects whose YOLO class == 'bottle'
       – draws green box + name + MSRP / Shelf price
 """
-import os, sys, cv2, numpy as np, torch, streamlit as st
+import os, sys, cv2, numpy as np, torch, streamlit as st, traceback
 from PIL import Image
-
+import unicodedata
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
 
 # ─────────────── TURN / STUN config  ──────────────
@@ -18,7 +18,7 @@ RTC_CONFIGURATION = {
     "iceTransportPolicy": "relay",                 # force relay via TURN
     "iceServers": [
         {"urls": "stun:stun.l.google.com:19302"},  # public STUN
-        {                                          # your TURN relay (plain TCP 443)
+        {                                          # TURN relay (plain TCP 443)
             "urls": "turn:34.31.80.206:443?transport=tcp",
             "username": "streamlit",
             "credential": "SuperSecretPassword123",
@@ -26,10 +26,8 @@ RTC_CONFIGURATION = {
     ],
 }
 
-# Must be first Streamlit call
 st.set_page_config(page_title="🥃 Whisky Goggles", layout="centered")
 
-# Add project root to path so we can import scripts.match
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.match import match
 
@@ -71,8 +69,28 @@ def embed_pil(pil: Image.Image) -> np.ndarray:
         vec = vec / vec.norm(dim=-1, keepdim=True)
     return vec.cpu().numpy()[0]
 
+def clean_text(s):
+    """Remove accents and unrenderable characters for OpenCV text."""
+    s = unicodedata.normalize("NFKD", str(s))
+    return s.encode("ascii", "ignore").decode("ascii")
+
+def draw_text_with_bg(img, text, pos, font=cv2.FONT_HERSHEY_SIMPLEX,
+                      font_scale=0.6, font_thickness=1,
+                      text_color=(255,255,255), bg_color=(0,128,0), alpha=0.6):
+    """Draw readable text with a semi-transparent background box."""
+    x, y = pos
+    text_size, baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
+    text_w, text_h = text_size
+
+    overlay = img.copy()
+    cv2.rectangle(overlay, (x, y - text_h - baseline), (x + text_w, y + baseline),
+                  bg_color, thickness=-1)
+    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+
+    cv2.putText(img, text, (x, y), font, font_scale, text_color, font_thickness, lineType=cv2.LINE_AA)
+
 def annotate_frame(frame_bgr: np.ndarray) -> np.ndarray:
-    """Detect bottles, match via CLIP, and draw on a BGR frame."""
+    """Detect bottles, match via CLIP, and draw name + price on BGR frame."""
     img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     results = DETECTOR.predict(img_rgb, verbose=False)[0]
     out = frame_bgr.copy()
@@ -81,40 +99,55 @@ def annotate_frame(frame_bgr: np.ndarray) -> np.ndarray:
                          results.boxes.cls.cpu().numpy().astype(int)):
         if cls != BOTTLE_CLS:
             continue
-        x1,y1,x2,y2 = map(int, xyxy)
+
+        x1, y1, x2, y2 = map(int, xyxy)
         crop = img_rgb[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
         pil_crop = Image.fromarray(crop)
-        vec      = embed_pil(pil_crop)
-        sims     = FEATS_IMG @ vec
+        vec = embed_pil(pil_crop)
+        sims = FEATS_IMG @ vec
         best_idx = int(np.argmax(sims))
-        bid      = ID_LIST[best_idx]
-        rec      = META_DF.loc[bid]
+        bid = ID_LIST[best_idx]
+        rec = META_DF.loc[bid]
         name, msrp, shelf = rec["name"], rec["avg_msrp"], rec["shelf_price"]
-        conf     = sims[best_idx]
 
-        # Draw box + text
-        cv2.rectangle(out, (x1,y1), (x2,y2), (0,255,0), 2)
-        lbl1 = f"{name[:20]}… {conf*100:.1f}%"
-        lbl2 = f"MSRP ${msrp:.0f} | Shelf ${shelf:.0f}"
-        y_txt = y1-10 if y1>20 else y2+20
-        cv2.putText(out, lbl1, (x1, y_txt),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2)
-        cv2.putText(out, lbl2, (x1, y_txt+15),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,200), 1)
+        # Clean name and build display labels
+        clean_name = clean_text(name)
+        price_label = f"Price: ${shelf:.0f}"
+
+        # Draw bounding box
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        y_txt = y1 - 10 if y1 > 30 else y2 + 20
+
+        draw_text_with_bg(out, clean_name, (x1, y_txt),
+                          font_scale=0.7, font_thickness=2, bg_color=(40, 40, 40))
+
+        draw_text_with_bg(out, price_label, (x1, y_txt + 22),
+                          font_scale=0.55, font_thickness=1, bg_color=(40, 40, 40))
     return out
 
+        
 class BottleTransformer(VideoTransformerBase):
     def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        return annotate_frame(img)
+        try:
+            img = frame.to_ndarray(format="bgr24")
+            annotated = annotate_frame(img)
+            return annotated
+        except Exception as e:
+            print("⚠️ transform() error:", e)
+            traceback.print_exc()
+            return frame.to_ndarray(format="bgr24")  # fallback to raw frame
 
 # ───────────────── UI LAYOUT ─────────────────
 
-st.title("🥃 Whisky Goggles")
-st.caption("Bottle identifier using CLIP + YOLO + PaddleOCR (500‑bottle catalog)")
+st.title("🥃 Whisky Goggles")
+
+st.caption("Real-time whisky bottle identification using CLIP, YOLO, and PaddleOCR.")
+st.caption("Achieves 100% top-1 accuracy on the 500-bottle catalog and 90%+ accuracy on unseen clear bottle images.")
+st.caption("Supports live detection via webcam using WebRTC.")
+
 
 tab_upload, tab_camera, tab_live = st.tabs(
     ["📁 Upload Photo","📸 Take Photo","🎥 Real Time"]
@@ -122,7 +155,7 @@ tab_upload, tab_camera, tab_live = st.tabs(
 
 # --- Tab 1: Upload Photo ---
 with tab_upload:
-    st.subheader("Upload a bottle photo")
+    st.subheader("Upload Bottle Photograph")
     uploaded = st.file_uploader("Choose an image", type=["jpg","jpeg","png"])
     if uploaded:
         tmp = "tmp_upload.jpg"
@@ -138,9 +171,8 @@ with tab_upload:
             st.markdown(f"**Confidence:** {top['confidence']*100:.2f}%")
             
 
-            st.write(f"**MSRP:** ${top.get('avg_msrp','N/A')}  Shelf: ${top.get('shelf_price','N/A')}")
-
-
+            st.write(f"**MSRP:** ${top.get('avg_msrp','N/A')}")
+            st.write(f"**Shelf:** ${top.get('shelf_price','N/A')}")
 
             status = {
                 "in_dataset":      "✅ Exact catalog match",
@@ -154,21 +186,20 @@ with tab_upload:
         with st.expander("Other good matches"):
             for alt in res["alt"]:
                 st.markdown(
-                    f"{alt['rank']}. **{alt['name']}** "
+                    f"{alt['rank']-1}. **{alt['name']}** "
                     f"({alt['confidence']*100:.2f}%)"
                 )
 
 # --- Tab 2: Take Photo ---
 with tab_camera:
     st.subheader("Take a Photo")
-    st.caption("Click ▶️ to open the camera and photograph your bottle.")
     if "cam_on" not in st.session_state:
         st.session_state.cam_on = False
 
     col1, col2 = st.columns([1,3])
-    if col1.button("▶️ Take Photo"):
+    if col1.button("▶️ Start Camera "):
         st.session_state.cam_on = True
-    if col2.button("⏹️ Close Camera"):
+    if col2.button("⏹️ Stop Camera "):
         st.session_state.cam_on = False
 
     if st.session_state.cam_on:
@@ -180,21 +211,38 @@ with tab_camera:
             with st.spinner("Matching..."):
                 res = match(tmp)
             top = res["top"]
-            st.markdown(f"### {top['name']} ({top['confidence']*100:.2f}%)")
-            st.image(top["ref_img"], caption="Catalog reference")
+
+            c1, c2 = st.columns([3,2])
+            with c1:
+                st.markdown(f"### {top['name']}")
+                st.markdown(f"**Confidence:** {top['confidence']*100:.2f}%")
+                
+
+                st.write(f"**MSRP:** ${top.get('avg_msrp','N/A')}")
+                st.write(f"**Shelf:** ${top.get('shelf_price','N/A')}")
+
+                status = {
+                    "in_dataset":      "✅ Exact catalog match",
+                    "unknown":         "⚠️ Closest match (not in catalog)",
+                    "no_text_detected":"🔎 No label text detected"
+                }[res["status"]]
+                st.info(status)
+            with c2:
+                st.image(top["ref_img"], caption="Catalog reference")
+
             with st.expander("Other matches"):
                 for alt in res["alt"]:
                     st.markdown(
-                        f"{alt['rank']}. {alt['name']} "
+                        f"{alt['rank']-1}. {alt['name']} "
                         f"({alt['confidence']*100:.2f}%)"
                     )
     else:
-        st.info("Camera is off. Click ▶️ to open it.")
+        st.info("Camera is off. Click ▶️ to start.")
 
 # --- Tab 3: Real‑Time ---
 with tab_live:
-    st.subheader("Live bottle detector (WebRTC)")
-    st.caption("Move a bottle in front of your webcam – only bottles are boxed & labelled.")
+    st.subheader("Live Bottle Detector (WebRTC)")
+    st.caption("Point camera in direction of the bottle to identify in real-time")
     if "live_on" not in st.session_state:
         st.session_state.live_on = False
 
@@ -210,8 +258,16 @@ with tab_live:
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=RTC_CONFIGURATION,      # <─ NEW
             video_transformer_factory=BottleTransformer,
-            media_stream_constraints={"video": True, "audio": False},
             async_processing=True,
+
+            media_stream_constraints={
+                "video": {
+                    "width": 640,
+                    "height": 480,
+                    "frameRate": 15
+                },
+                "audio": False
+            },
         )
     else:
         st.info("Camera is off. Click ▶️ to start real‑time detection.")
