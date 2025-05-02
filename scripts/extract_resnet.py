@@ -36,7 +36,7 @@ vecs, valid_ids = [], []
 
 for i, path in paths:
     if not os.path.exists(path):
-        print(f"⚠️  Skipping missing image: {path}")
+        print(f"Skipping missing image: {path}")
         continue
     try:
         img = clahe(Image.open(path).convert("RGB"))
@@ -45,7 +45,7 @@ for i, path in paths:
         vecs.append(v / np.linalg.norm(v))
         valid_ids.append(i)
     except Exception as e:
-        print(f"❌ Failed on {path}: {e}")
+        print(f"Failed on {path}: {e}")
         continue
 
 # Save valid features

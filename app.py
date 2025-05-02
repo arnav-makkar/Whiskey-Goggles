@@ -1,6 +1,5 @@
-# app/streamlit_app.py
 """
-Streamlit‑based Whisky Goggles demo
+Streamlit‑based Whiskey Goggles demo
 
 • Tab 1  Upload Photo   → runs scripts.match → shows best match + alternates
 • Tab 2  Take Photo     → same logic, camera input
@@ -11,7 +10,9 @@ Streamlit‑based Whisky Goggles demo
 import os, sys, cv2, numpy as np, torch, streamlit as st, traceback
 from PIL import Image
 import unicodedata
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import threading, json, time
+
 
 # ─────────────── TURN / STUN config  ──────────────
 RTC_CONFIGURATION = {
@@ -26,7 +27,7 @@ RTC_CONFIGURATION = {
     ],
 }
 
-st.set_page_config(page_title="🥃 Whisky Goggles", layout="centered")
+st.set_page_config(page_title="🥃 Whiskey Goggles", layout="centered")
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.match import match
@@ -142,9 +143,9 @@ class BottleTransformer(VideoTransformerBase):
 
 # ───────────────── UI LAYOUT ─────────────────
 
-st.title("🥃 Whisky Goggles")
+st.title("🥃 Whiskey Goggles")
 
-st.caption("Real-time whisky bottle identification using CLIP, YOLO, and PaddleOCR.")
+st.caption("Real-time whiskey bottle identification using CLIP, YOLO, and PaddleOCR.")
 st.caption("Achieves 100% top-1 accuracy on the 500-bottle catalog and 90%+ accuracy on unseen clear bottle images.")
 st.caption("Supports live detection via webcam using WebRTC.")
 
@@ -252,22 +253,31 @@ with tab_live:
     if col2.button("⏹️ Stop Camera"):
         st.session_state.live_on = False
 
+    def start_keepalive(ctx, interval=20):
+        def _loop():
+            while ctx.state.playing:          # Stream is live
+                try:
+                    ctx.send_data(json.dumps({"type": "ping"}))
+                except Exception:
+                    break                     # stream stopped
+                time.sleep(interval)
+        threading.Thread(target=_loop, daemon=True).start()
+
+    # if st.session_state.live_on:
     if st.session_state.live_on:
-        webrtc_streamer(
+        ctx = webrtc_streamer(
             key="whisky-live",
             mode=WebRtcMode.SENDRECV,
-            rtc_configuration=RTC_CONFIGURATION,      # <─ NEW
+            rtc_configuration=RTC_CONFIGURATION,
             video_transformer_factory=BottleTransformer,
             async_processing=True,
-
             media_stream_constraints={
-                "video": {
-                    "width": 640,
-                    "height": 480,
-                    "frameRate": 15
-                },
-                "audio": False
+                "video": {"width": 640, "height": 480, "frameRate": 100},
+                "audio": False,
             },
         )
+        if ctx.state.playing and "keepalive_started" not in st.session_state:
+            start_keepalive(ctx)              # spin up the pinger
+            st.session_state.keepalive_started = True
     else:
         st.info("Camera is off. Click ▶️ to start real‑time detection.")

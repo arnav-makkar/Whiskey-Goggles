@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Build two 512‑d CLIP indices over your 500 catalog bottles:
   • data/feats_img.npy   ← image embeddings (YOLO‑cropped + enhanced)
@@ -16,7 +15,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 
 device       = "cuda" if torch.cuda.is_available() else "cpu"
-# use the medium YOLOv8s model for more accurate bottle detection
+# use the medium YOLOv8s model for accurate bottle detection
 detector     = YOLO("yolov8s.pt")
 clip_model, preprocess = clip.load("ViT-B/32", device=device)
 clip_model.eval()
