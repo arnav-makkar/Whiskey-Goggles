@@ -53,4 +53,5 @@ Behind the scenes, the system uses a hybrid two-stage matching pipeline:
 - A separate TURN server is hosted on a Google Compute Engine VM using `coturn` on port 443
 - The backend loads models and embeddings efficiently using Streamlit caching for responsiveness
 
+![alt_text](system_architecture.png)
 ---
